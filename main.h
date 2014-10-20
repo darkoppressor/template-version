@@ -34,6 +34,6 @@ void update_android_manifest(const Version& version_old,const Version& version_n
 
 void rename_file(std::string target,std::string replacement);
 
-void replace_in_file(std::string file,std::string target,std::string replacement);
+void replace_in_file(std::string filename,std::string target,std::string replacement);
 
 #endif
