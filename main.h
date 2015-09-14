@@ -5,7 +5,6 @@
 #ifndef main_h
 #define main_h
 
-#include <vector>
 #include <string>
 
 class Version{
@@ -28,16 +27,14 @@ void print_usage(std::string program_name);
 
 int main(int argc,char* args[]);
 
-Version get_version();
+Version get_version(std::string project_directory);
 
-void update_version_header(const Version& version,const std::string& status);
+bool update_version_header(std::string project_directory,const Version& version,const std::string& status);
 
-void update_info_plist(const Version& version_old,const Version& version_new);
+bool update_info_plist(std::string project_directory,const Version& version_old,const Version& version_new);
 
-void update_android_manifest(const Version& version_old,const Version& version_new);
+bool update_android_manifest(std::string project_directory,const Version& version_old,const Version& version_new);
 
-void rename_file(std::string target,std::string replacement);
-
-void replace_in_file(std::string filename,std::string target,std::string replacement);
+bool replace_in_file(std::string filename,std::string target,std::string replacement);
 
 #endif

@@ -41,9 +41,10 @@ void print_error(string error_message){
 }
 
 void print_usage(string program_name){
-    cout<<"Usage: "<<program_name<<" [VERSION-COMPONENT] [STATUS]\n";
+    cout<<program_name<<" - increment a component of a Cheese Engine project's version number\n";
+    cout<<"Usage: "<<program_name<<" PROJECT-DIRECTORY VERSION-COMPONENT STATUS\n";
     cout<<"VERSION-COMPONENT must be one of: 'major' 'minor' 'micro'\n";
-    cout<<"[STATUS] is optional and can be any string\n";
+    cout<<"STATUS is optional and can be any string\n";
 }
 
 int main(int argc,char* args[]){
@@ -52,17 +53,35 @@ int main(int argc,char* args[]){
 
     //Can this even happen?
     if(argc<=0){
-        cout<<"Error: Did not receive the program name\n";
+        print_error("Did not receive the program name");
 
         return 1;
     }
-    else if(argc==1){
+    else if(argc<3 || argc>4){
         print_usage(args[0]);
 
         return 0;
     }
 
-    string version_component=args[1];
+    string project_directory=args[1];
+
+    if(project_directory.length()==0){
+        print_error("The PROJECT-DIRECTORY argument has a length of 0");
+
+        return 1;
+    }
+
+    if(boost::algorithm::ends_with(project_directory,"/") || boost::algorithm::ends_with(project_directory,"\\")){
+        project_directory.erase(project_directory.begin()+project_directory.length()-1);
+    }
+
+    if(!boost::filesystem::is_directory(project_directory)){
+        print_error("No such directory: "+project_directory);
+
+        return 1;
+    }
+
+    string version_component=args[2];
 
     if(version_component!="major" && version_component!="minor" && version_component!="micro"){
         print_usage(args[0]);
@@ -72,17 +91,15 @@ int main(int argc,char* args[]){
 
     string status="";
 
-    if(argc>=3){
-        status=args[2];
+    if(argc==4){
+        status=args[3];
     }
 
-    Version version_old=get_version();
+    Version version_old=get_version(project_directory);
     Version version_new=version_old;
 
     if(version_new.major<0 || version_new.minor<0 || version_new.micro<0){
-        print_error("Failed to load version information from version.h");
-
-        return 2;
+        return 1;
     }
 
     if(version_component=="major"){
@@ -95,21 +112,35 @@ int main(int argc,char* args[]){
         version_new.increment_micro();
     }
 
-    update_version_header(version_new,status);
+    if(!update_version_header(project_directory,version_new,status)){
+        return 1;
+    }
 
-    update_info_plist(version_old,version_new);
+    if(!update_info_plist(project_directory,version_old,version_new)){
+        return 1;
+    }
 
-    update_android_manifest(version_old,version_new);
+    if(!update_android_manifest(project_directory,version_old,version_new)){
+        return 1;
+    }
 
     return 0;
 }
 
-Version get_version(){
+Version get_version(string project_directory){
     Version version;
+
+    if(!boost::filesystem::exists(project_directory+"/version.h")){
+        print_error("No such file: "+project_directory+"/version.h");
+
+        return version;
+    }
+
+    cout<<"Reading current version number for the project in "<<project_directory<<"\n";
 
     String_Stuff string_stuff;
 
-    ifstream file("../version.h");
+    ifstream file(project_directory+"/version.h");
 
     if(file.is_open()){
         while(!file.eof()){
@@ -152,12 +183,20 @@ Version get_version(){
     return version;
 }
 
-void update_version_header(const Version& version,const string& status){
+bool update_version_header(string project_directory,const Version& version,const string& status){
+    if(!boost::filesystem::exists(project_directory+"/version.h")){
+        print_error("No such file: "+project_directory+"/version.h");
+
+        return false;
+    }
+
+    cout<<"Incrementing the version.h version number for the project in "<<project_directory<<"\n";
+
     vector<string> file_data;
 
     String_Stuff string_stuff;
 
-    ifstream file("../version.h");
+    ifstream file(project_directory+"/version.h");
 
     if(file.is_open()){
         while(!file.eof()){
@@ -170,6 +209,11 @@ void update_version_header(const Version& version,const string& status){
     }
     else{
         print_error("Failed to open version.h for updating (input phase)");
+
+        file.close();
+        file.clear();
+
+        return false;
     }
 
     file.close();
@@ -211,7 +255,7 @@ void update_version_header(const Version& version,const string& status){
         }
     }
 
-    ofstream file_save("../version.h");
+    ofstream file_save(project_directory+"/version.h");
 
     if(file_save.is_open()){
         for(int i=0;i<file_data.size();i++){
@@ -224,22 +268,37 @@ void update_version_header(const Version& version,const string& status){
     }
     else{
         print_error("Failed to open version.h for updating (output phase)");
+
+        file_save.close();
+        file_save.clear();
+
+        return false;
     }
 
     file_save.close();
     file_save.clear();
+
+    return true;
 }
 
-void update_info_plist(const Version& version_old,const Version& version_new){
+bool update_info_plist(string project_directory,const Version& version_old,const Version& version_new){
+    if(!boost::filesystem::is_directory(project_directory+"/development")){
+        print_error("No such directory: "+project_directory+"/development");
+
+        return false;
+    }
+
+    cout<<"Incrementing the Info.plist version number for the project in "<<project_directory<<"\n";
+
     String_Stuff string_stuff;
 
     string app_directory="";
 
-    for(File_IO_Directory_Iterator it("./");it.evaluate();it.iterate()){
+    for(File_IO_Directory_Iterator it(project_directory+"/development/");it.evaluate();it.iterate()){
         if(it.is_directory()){
             string file_name=it.get_file_name();
 
-            if(boost::algorithm::contains(file_name,".app")){
+            if(boost::algorithm::ends_with(file_name,".app")){
                 app_directory=file_name;
 
                 break;
@@ -248,29 +307,45 @@ void update_info_plist(const Version& version_old,const Version& version_new){
     }
 
     if(app_directory.length()>0){
-        string info_plist=app_directory+"/Contents/Info.plist";
+        string info_plist=project_directory+"/development/"+app_directory+"/Contents/Info.plist";
 
         string str_old_version=string_stuff.num_to_string(version_old.major)+"."+string_stuff.num_to_string(version_old.minor)+"."+string_stuff.num_to_string(version_old.micro);
         string str_new_version=string_stuff.num_to_string(version_new.major)+"."+string_stuff.num_to_string(version_new.minor)+"."+string_stuff.num_to_string(version_new.micro);
 
-        replace_in_file(info_plist,str_old_version,str_new_version);
+        if(!replace_in_file(info_plist,str_old_version,str_new_version)){
+            return false;
+        }
     }
     else{
         print_error("Failed to locate .app directory");
+
+        return false;
     }
+
+    return true;
 }
 
-void update_android_manifest(const Version& version_old,const Version& version_new){
+bool update_android_manifest(string project_directory,const Version& version_old,const Version& version_new){
+    if(!boost::filesystem::exists(project_directory+"/development/android/AndroidManifest.xml")){
+        print_error("No such file: "+project_directory+"/development/android/AndroidManifest.xml");
+
+        return false;
+    }
+
+    cout<<"Incrementing the AndroidManifest.xml version number for the project in "<<project_directory<<"\n";
+
     String_Stuff string_stuff;
 
     string str_old_version=string_stuff.num_to_string(version_old.major)+"."+string_stuff.num_to_string(version_old.minor)+"."+string_stuff.num_to_string(version_old.micro);
     string str_new_version=string_stuff.num_to_string(version_new.major)+"."+string_stuff.num_to_string(version_new.minor)+"."+string_stuff.num_to_string(version_new.micro);
 
-    replace_in_file("android/AndroidManifest.xml",str_old_version,str_new_version);
+    if(!replace_in_file(project_directory+"/development/android/AndroidManifest.xml",str_old_version,str_new_version)){
+        return false;
+    }
 
     vector<string> file_data;
 
-    ifstream file("android/AndroidManifest.xml");
+    ifstream file(project_directory+"/development/android/AndroidManifest.xml");
 
     if(file.is_open()){
         while(!file.eof()){
@@ -283,6 +358,11 @@ void update_android_manifest(const Version& version_old,const Version& version_n
     }
     else{
         print_error("Failed to open AndroidManifest.xml for updating (input phase)");
+
+        file.close();
+        file.clear();
+
+        return false;
     }
 
     file.close();
@@ -310,7 +390,7 @@ void update_android_manifest(const Version& version_old,const Version& version_n
         }
     }
 
-    ofstream file_save("android/AndroidManifest.xml");
+    ofstream file_save(project_directory+"/development/android/AndroidManifest.xml");
 
     if(file_save.is_open()){
         for(int i=0;i<file_data.size();i++){
@@ -323,17 +403,28 @@ void update_android_manifest(const Version& version_old,const Version& version_n
     }
     else{
         print_error("Failed to open AndroidManifest.xml for updating (output phase)");
+
+        file_save.close();
+        file_save.clear();
+
+        return false;
     }
 
     file_save.close();
     file_save.clear();
+
+    return true;
 }
 
-void rename_file(string target,string replacement){
-    boost::filesystem::rename(target,replacement);
-}
+bool replace_in_file(string filename,string target,string replacement){
+    if(!boost::filesystem::exists(filename)){
+        print_error("No such file: "+filename);
 
-void replace_in_file(string filename,string target,string replacement){
+        return false;
+    }
+
+    cout<<"Renaming all occurrences of "<<target<<" to "<<replacement<<" in "<<filename<<"\n";
+
     vector<string> file_data;
 
     ifstream file(filename.c_str());
@@ -349,13 +440,18 @@ void replace_in_file(string filename,string target,string replacement){
     }
     else{
         print_error("Failed to open "+filename+" for updating (input phase)");
+
+        file.close();
+        file.clear();
+
+        return false;
     }
 
     file.close();
     file.clear();
 
     for(int i=0;i<file_data.size();i++){
-        boost::algorithm::replace_first(file_data[i],target,replacement);
+        boost::algorithm::replace_all(file_data[i],target,replacement);
     }
 
     ofstream file_save(filename.c_str());
@@ -371,8 +467,15 @@ void replace_in_file(string filename,string target,string replacement){
     }
     else{
         print_error("Failed to open "+filename+" for updating (output phase)");
+
+        file_save.close();
+        file_save.clear();
+
+        return false;
     }
 
     file_save.close();
     file_save.clear();
+
+    return true;
 }
