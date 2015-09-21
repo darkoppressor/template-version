@@ -112,7 +112,7 @@ int main(int argc,char* args[]){
         version_new.increment_micro();
     }
 
-    if(!update_version_header(project_directory,version_new,status)){
+    if(!update_version_file(project_directory,version_new,status)){
         return 1;
     }
 
@@ -130,8 +130,8 @@ int main(int argc,char* args[]){
 Version get_version(string project_directory){
     Version version;
 
-    if(!boost::filesystem::exists(project_directory+"/version.h")){
-        print_error("No such file: "+project_directory+"/version.h");
+    if(!boost::filesystem::exists(project_directory+"/version.cpp")){
+        print_error("No such file: "+project_directory+"/version.cpp");
 
         return version;
     }
@@ -140,7 +140,7 @@ Version get_version(string project_directory){
 
     String_Stuff string_stuff;
 
-    ifstream file(project_directory+"/version.h");
+    ifstream file(project_directory+"/version.cpp");
 
     if(file.is_open()){
         while(!file.eof()){
@@ -150,23 +150,26 @@ Version get_version(string project_directory){
 
             boost::algorithm::trim(line);
 
-            if(boost::algorithm::contains(line,"static const int MAJOR=")){
-                boost::algorithm::erase_first(line,"static const int MAJOR=");
+            if(boost::algorithm::contains(line,"MAJOR")){
+                boost::algorithm::erase_first(line,"return");
                 boost::algorithm::erase_first(line,";");
+                boost::algorithm::erase_first(line,"//MAJOR");
                 boost::algorithm::trim(line);
 
                 version.major=string_stuff.string_to_long(line);
             }
-            else if(boost::algorithm::contains(line,"static const int MINOR=")){
-                boost::algorithm::erase_first(line,"static const int MINOR=");
+            else if(boost::algorithm::contains(line,"MINOR")){
+                boost::algorithm::erase_first(line,"return");
                 boost::algorithm::erase_first(line,";");
+                boost::algorithm::erase_first(line,"//MINOR");
                 boost::algorithm::trim(line);
 
                 version.minor=string_stuff.string_to_long(line);
             }
-            else if(boost::algorithm::contains(line,"static const int MICRO=")){
-                boost::algorithm::erase_first(line,"static const int MICRO=");
+            else if(boost::algorithm::contains(line,"MICRO")){
+                boost::algorithm::erase_first(line,"return");
                 boost::algorithm::erase_first(line,";");
+                boost::algorithm::erase_first(line,"//MICRO");
                 boost::algorithm::trim(line);
 
                 version.micro=string_stuff.string_to_long(line);
@@ -174,7 +177,7 @@ Version get_version(string project_directory){
         }
     }
     else{
-        print_error("Failed to open version.h for reading version information");
+        print_error("Failed to open version.cpp for reading version information");
     }
 
     file.close();
@@ -183,20 +186,20 @@ Version get_version(string project_directory){
     return version;
 }
 
-bool update_version_header(string project_directory,const Version& version,const string& status){
-    if(!boost::filesystem::exists(project_directory+"/version.h")){
-        print_error("No such file: "+project_directory+"/version.h");
+bool update_version_file(string project_directory,const Version& version,const string& status){
+    if(!boost::filesystem::exists(project_directory+"/version.cpp")){
+        print_error("No such file: "+project_directory+"/version.cpp");
 
         return false;
     }
 
-    cout<<"Incrementing the version.h version number for the project in "<<project_directory<<"\n";
+    cout<<"Incrementing the version.cpp version number for the project in "<<project_directory<<"\n";
 
     vector<string> file_data;
 
     String_Stuff string_stuff;
 
-    ifstream file(project_directory+"/version.h");
+    ifstream file(project_directory+"/version.cpp");
 
     if(file.is_open()){
         while(!file.eof()){
@@ -208,7 +211,7 @@ bool update_version_header(string project_directory,const Version& version,const
         }
     }
     else{
-        print_error("Failed to open version.h for updating (input phase)");
+        print_error("Failed to open version.cpp for updating (input phase)");
 
         file.close();
         file.clear();
@@ -220,34 +223,38 @@ bool update_version_header(string project_directory,const Version& version,const
     file.clear();
 
     for(int i=0;i<file_data.size();i++){
-        if(boost::algorithm::contains(file_data[i],"const int")){
+        if(boost::algorithm::contains(file_data[i],"MAJOR") || boost::algorithm::contains(file_data[i],"MINOR") || boost::algorithm::contains(file_data[i],"MICRO") ||
+           boost::algorithm::contains(file_data[i],"STATUS")){
             for(int n=0;n<file_data[i].length();n++){
-                if(file_data[i][n]=='='){
+                if(file_data[i][n]=='n'){
                     string component="";
+                    string end_string="";
+                    bool status_line=false;
                     if(boost::algorithm::contains(file_data[i],"MAJOR")){
                         component=string_stuff.num_to_string(version.major);
+                        end_string="//MAJOR";
                     }
                     else if(boost::algorithm::contains(file_data[i],"MINOR")){
                         component=string_stuff.num_to_string(version.minor);
+                        end_string="//MINOR";
+                    }
+                    else if(boost::algorithm::contains(file_data[i],"MICRO")){
+                        component=string_stuff.num_to_string(version.micro);
+                        end_string="//MICRO";
                     }
                     else{
-                        component=string_stuff.num_to_string(version.micro);
+                        status_line=true;
+                        end_string="//STATUS";
                     }
 
                     file_data[i].erase(file_data[i].begin()+n,file_data[i].end());
 
-                    file_data[i]+="="+component+";";
-
-                    break;
-                }
-            }
-        }
-        else if(status.length()>0 && boost::algorithm::contains(file_data[i],"STATUS")){
-            for(int n=0;n<file_data[i].length();n++){
-                if(file_data[i][n]=='='){
-                    file_data[i].erase(file_data[i].begin()+n,file_data[i].end());
-
-                    file_data[i]+="=\""+status+"\";";
+                    if(status_line){
+                        file_data[i]+="n \""+status+"\"; "+end_string;
+                    }
+                    else{
+                        file_data[i]+="n "+component+"; "+end_string;
+                    }
 
                     break;
                 }
@@ -255,7 +262,7 @@ bool update_version_header(string project_directory,const Version& version,const
         }
     }
 
-    ofstream file_save(project_directory+"/version.h");
+    ofstream file_save(project_directory+"/version.cpp");
 
     if(file_save.is_open()){
         for(int i=0;i<file_data.size();i++){
@@ -267,7 +274,7 @@ bool update_version_header(string project_directory,const Version& version,const
         }
     }
     else{
-        print_error("Failed to open version.h for updating (output phase)");
+        print_error("Failed to open version.cpp for updating (output phase)");
 
         file_save.close();
         file_save.clear();

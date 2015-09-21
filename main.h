@@ -29,7 +29,7 @@ int main(int argc,char* args[]);
 
 Version get_version(std::string project_directory);
 
-bool update_version_header(std::string project_directory,const Version& version,const std::string& status);
+bool update_version_file(std::string project_directory,const Version& version,const std::string& status);
 
 bool update_info_plist(std::string project_directory,const Version& version_old,const Version& version_new);
 
